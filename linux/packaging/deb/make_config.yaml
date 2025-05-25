@@ -1,0 +1,39 @@
+display_name: DABPlayer
+package_name: DABPlayer
+
+maintainer:
+  name: Daniel D
+  email: DABPlayer@danieldenisov.com
+
+priority: optional
+
+section: flutter
+
+installed_size: 27700
+
+dependencies:
+  - mpv
+
+essential: false
+
+icon: linux/ic_launcher.png
+
+postuninstall_scripts:
+  - echo "Sorry to see you go :("
+
+keywords:
+  - Audiobook
+  - AudioBook
+  - audoobook
+  - sync
+  - could
+  - pantry
+
+generic_name: DABPlayer
+
+categories:
+  - Development
+  - Utility
+  - Media
+
+startup_notify: true
