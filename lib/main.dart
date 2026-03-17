@@ -29,7 +29,7 @@ Future<void> main() async {
       androidNotificationChannelId: 'com.dabplayer.channel.audio',
       androidNotificationChannelName: 'DABPlayer Audio',
       androidNotificationOngoing: true,
-      androidStopForegroundOnPause: false,
+      androidStopForegroundOnPause: true,
     ),
   );
 

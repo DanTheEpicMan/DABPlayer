@@ -24,7 +24,7 @@ class LocalRepository {
               chapterIndex: r.chapterIndex,
               positionSeconds: r.positionSeconds,
               deviceName: r.deviceName,
-              text: r.text,
+              text: r.textContent,
               createdAt: DateTime.parse(r.createdAt),
             ))
         .toList()
@@ -34,10 +34,10 @@ class LocalRepository {
   Future<m.Note> addNote(m.Note note) async {
     final id = await _db.insertNote(NotesCompanion.insert(
       bookId: note.bookId,
-      chapterIndex: Value(note.chapterIndex),
-      positionSeconds: Value(note.positionSeconds),
+      chapterIndex: note.chapterIndex,
+      positionSeconds: note.positionSeconds,
       deviceName: note.deviceName,
-      text: note.text,
+      textContent: note.text,
       createdAt: note.createdAt.toIso8601String(),
     ));
     return note.copyWith(id: id);
@@ -51,7 +51,7 @@ class LocalRepository {
       chapterIndex: Value(note.chapterIndex),
       positionSeconds: Value(note.positionSeconds),
       deviceName: Value(note.deviceName),
-      text: Value(note.text),
+      textContent: Value(note.text),
       createdAt: Value(note.createdAt.toIso8601String()),
     ));
   }
@@ -63,10 +63,10 @@ class LocalRepository {
     final companions = notes
         .map((n) => NotesCompanion.insert(
               bookId: n.bookId,
-              chapterIndex: Value(n.chapterIndex),
-              positionSeconds: Value(n.positionSeconds),
+              chapterIndex: n.chapterIndex,
+              positionSeconds: n.positionSeconds,
               deviceName: n.deviceName,
-              text: n.text,
+              textContent: n.text,
               createdAt: n.createdAt.toIso8601String(),
             ))
         .toList();
@@ -107,8 +107,8 @@ class LocalRepository {
     return _db.upsertPosition(DevicePositionsCompanion.insert(
       bookId: pos.bookId,
       deviceName: pos.deviceName,
-      chapterIndex: Value(pos.chapterIndex),
-      positionSeconds: Value(pos.positionSeconds),
+      chapterIndex: pos.chapterIndex,
+      positionSeconds: pos.positionSeconds,
       updatedAt: pos.updatedAt.toIso8601String(),
     ));
   }

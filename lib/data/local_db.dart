@@ -4,6 +4,9 @@ import 'package:drift_sqflite/drift_sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
+import 'models/note.dart';
+import 'models/device_position.dart';
+
 part 'local_db.g.dart';
 
 // ---------------------------------------------------------------------------
@@ -16,7 +19,7 @@ class Notes extends Table {
   IntColumn get chapterIndex => integer()();
   RealColumn get positionSeconds => real()();
   TextColumn get deviceName => text()();
-  TextColumn get text => text()();
+  TextColumn get textContent => text().named('text')();
   TextColumn get createdAt => text()(); // ISO-8601
 
   @override
