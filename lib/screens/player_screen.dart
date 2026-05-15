@@ -30,6 +30,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final _noteCtrl = TextEditingController();
   final _timeCtrl = TextEditingController();
 
+  // Transcription queue state
+  int _processingCount = 0;
+
   Timer? _saveTimer;
 
   Timer? _sleepTimer;
@@ -596,6 +599,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           audioHandler.pause();
                         }
                       },
+                      onTranscriptionStart: () {
+                        setState(() => _processingCount++);
+                      },
+                      onTranscriptionEnd: () {
+                        setState(() => _processingCount = (_processingCount - 1).clamp(0, 99));
+                      },
+                      onResumeRequested: () {
+                        audioHandler.play();
+                      },
                     )
                   else
                     Expanded(
@@ -606,6 +618,38 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         onAdd: _addTextNote,
                         onDelete: _deleteNote,
                         onEdit: _editNote,
+                      ),
+                    ),
+                  
+                  // Transcription Queue Overlay
+                  if (_processingCount > 0)
+                    Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Transcribing $_processingCount note${_processingCount > 1 ? 's' : ''} in background...',
+                              style: TextStyle(
+                                color: Colors.orange.shade800,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                 ],

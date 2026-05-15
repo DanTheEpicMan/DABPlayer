@@ -1,16 +1,8 @@
-#!/usr/bin/env bash
-# Build DABPlayer for Linux desktop.
-# Usage: ./scripts/build_linux.sh
+#!/bin/bash
+# DABPlayer Linux Build Script
+# Ensure you have flutter and linux-specific dependencies installed:
+# sudo apt-get install clang cmake ninja-build pkg-config libgtk-3-dev
 
-set -e
-cd "$(dirname "$0")/.."
-
-echo "==> flutter pub get"
-flutter pub get
-
-echo "==> Building Linux release..."
-flutter build linux --release
-
-echo "==> Done!"
-echo "    Output: build/linux/x64/release/bundle/"
-echo "    Run with: ./build/linux/x64/release/bundle/dabplayer"
+echo "Building DABPlayer for Linux..."
+flutter build linux
+echo "Build complete. Output found in build/linux/x64/release/bundle/"

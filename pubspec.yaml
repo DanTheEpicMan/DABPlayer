@@ -2,7 +2,7 @@ name: DABPlayer
 description: "Offline-first audiobook player with optional cloud sync."
 publish_to: 'none'
 
-version: 2.0.1+7
+version: 2.0.1+8
 
 environment:
   sdk: ^3.8.0

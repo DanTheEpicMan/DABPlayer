@@ -5,15 +5,22 @@ import 'package:path_provider/path_provider.dart';
 import '../services/local_whisper_service.dart';
 import '../theme.dart';
 
-/// Large-tap car mode UI for flawless native audio recording and Local Whisper.
+/// Large-tap car mode UI for non-blocking voice notes.
+/// Transcription happens in the background via callbacks to the parent.
 class CarModePanel extends StatefulWidget {
   final Future<void> Function(String) onSaveNote;
   final VoidCallback onPauseRequested;
+  final VoidCallback onResumeRequested;
+  final VoidCallback onTranscriptionStart;
+  final VoidCallback onTranscriptionEnd;
 
   const CarModePanel({
     super.key,
     required this.onSaveNote,
     required this.onPauseRequested,
+    required this.onResumeRequested,
+    required this.onTranscriptionStart,
+    required this.onTranscriptionEnd,
   });
 
   @override
@@ -23,7 +30,6 @@ class CarModePanel extends StatefulWidget {
 class _CarModePanelState extends State<CarModePanel> {
   late final AudioRecorder _audioRecorder;
   bool _isRecording = false;
-  bool _isProcessing = false;
   String? _recordPath;
 
   @override
@@ -41,32 +47,24 @@ class _CarModePanelState extends State<CarModePanel> {
   }
 
   Future<void> _handleTap() async {
-    if (_isProcessing) return;
-
     if (_isRecording) {
-      // Stop recording and pass to local whisper
-      setState(() {
-        _isRecording = false;
-        _isProcessing = true;
-      });
-
+      // Stop recording
+      setState(() => _isRecording = false);
+      
       try {
         final path = await _audioRecorder.stop();
+        // Immediately resume playback as requested
+        widget.onResumeRequested();
+
         if (path != null && path.isNotEmpty) {
-          final transcript = await LocalWhisperService.transcribe(path);
-          if (transcript != null && transcript.trim().isNotEmpty) {
-            await widget.onSaveNote(transcript.trim());
-          }
+          // Offload transcription to background task
+          _processTranscription(path);
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('$e'), duration: const Duration(seconds: 4)),
+            SnackBar(content: Text('Error stopping recorder: $e')),
           );
-        }
-      } finally {
-        if (mounted) {
-          setState(() => _isProcessing = false);
         }
       }
     } else {
@@ -75,7 +73,6 @@ class _CarModePanelState extends State<CarModePanel> {
       try {
         if (await _audioRecorder.hasPermission()) {
           final dir = await getExternalStorageDirectory() ?? await getApplicationDocumentsDirectory();
-          // Provide a clean permanent filename instead of temp
           _recordPath = '${dir.path}/VMemo_${DateTime.now().millisecondsSinceEpoch}.wav';
           
           await _audioRecorder.start(
@@ -105,11 +102,23 @@ class _CarModePanelState extends State<CarModePanel> {
     }
   }
 
+  Future<void> _processTranscription(String path) async {
+    widget.onTranscriptionStart();
+    try {
+      final transcript = await LocalWhisperService.transcribe(path);
+      if (transcript != null && transcript.trim().isNotEmpty) {
+        await widget.onSaveNote(transcript.trim());
+      }
+    } catch (e) {
+      debugPrint('Background transcription error: $e');
+    } finally {
+      widget.onTranscriptionEnd();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    Color ringColor = kPrimaryColor;
-    if (_isRecording) ringColor = Colors.redAccent;
-    if (_isProcessing) ringColor = Colors.orange;
+    Color ringColor = _isRecording ? Colors.redAccent : kPrimaryColor;
 
     return Expanded(
       child: Container(
@@ -142,40 +151,27 @@ class _CarModePanelState extends State<CarModePanel> {
                         )
                       ],
                     ),
-                    child: _isProcessing
-                        ? const Center(
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 3,
-                            ),
-                          )
-                        : Icon(
-                            _isRecording ? Icons.stop : Icons.mic,
-                            size: 60,
-                            color: Colors.white,
-                          ),
+                    child: Icon(
+                      _isRecording ? Icons.stop : Icons.mic,
+                      size: 60,
+                      color: Colors.white,
+                    ),
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    _isProcessing
-                        ? 'Transcribing Note Offline...'
-                        : _isRecording
-                            ? 'Recording... Tap to Stop'
-                            : 'Tap to Record Note',
+                    _isRecording
+                        ? 'Recording... Tap to Finish'
+                        : 'Tap to Record Note',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           color: ringColor,
                           fontWeight: FontWeight.w600,
                         ),
                   ),
-                  if (_isProcessing) ...[
+                  if (_isRecording) ...[
                     const SizedBox(height: 16),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                      child: Text(
-                        'Running Whisper local inference...',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.grey.shade600),
-                      ),
+                    Text(
+                      'Audiobook is paused',
+                      style: TextStyle(color: Colors.grey.shade600),
                     ),
                   ]
                 ],
