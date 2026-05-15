@@ -57,7 +57,7 @@ class _BookSelectScreenState extends State<BookSelectScreen> {
   void _selectBook(Book book) {
     currentBook = book;
     currentChapterIndex = 0;
-    Navigator.pushReplacementNamed(context, '/devices');
+    Navigator.pushNamed(context, '/devices');
   }
 
   @override
@@ -74,7 +74,7 @@ class _BookSelectScreenState extends State<BookSelectScreen> {
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () =>
-                Navigator.pushReplacementNamed(context, '/settings'),
+                Navigator.pushNamed(context, '/settings'),
             tooltip: 'Settings',
           ),
         ],

@@ -36,86 +36,76 @@ class PlaybackControls extends StatelessWidget {
                     AudioProcessingState.buffering ||
                 ps?.processingState == AudioProcessingState.loading;
 
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Time labels
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        formatDuration(pos,
-                            forceHours: total.inHours > 0),
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      Text(
-                        formatDuration(total,
-                            forceHours: total.inHours > 0),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-                // Slider
-                Slider(
-                  value: (total == Duration.zero
-                          ? 0.0
-                          : pos.inMilliseconds.toDouble())
-                      .clamp(0.0,
-                          total.inMilliseconds.toDouble().clamp(1, double.infinity)),
-                  min: 0.0,
-                  max: total == Duration.zero
-                      ? 1.0
-                      : total.inMilliseconds.toDouble(),
-                  onChanged: isLoading || total == Duration.zero
-                      ? null
-                      : (v) => audioHandler
-                          .seek(Duration(milliseconds: v.round())),
-                  onChangeEnd: (_) => onSeekEnd?.call(),
-                ),
-                // Buttons
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            return StreamBuilder<Duration>(
+              stream: AudioService.position,
+              builder: (context, posSnap) {
+                final pos = posSnap.data ?? ps?.updatePosition ?? Duration.zero;
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.replay_30),
-                      iconSize: 44,
-                      onPressed: isLoading
-                          ? null
-                          : () => onSeekRelative(
-                              const Duration(seconds: -30)),
-                      tooltip: 'Rewind 30s',
-                    ),
-                    if (buffering || isLoading)
-                      const SizedBox(
-                        width: 64,
-                        height: 64,
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    else
-                      IconButton(
-                        icon: Icon(playing
-                            ? Icons.pause_circle_filled
-                            : Icons.play_circle_filled),
-                        iconSize: 64,
-                        color: kPrimaryColor,
-                        onPressed: onPlayPause,
-                        tooltip: playing ? 'Pause' : 'Play',
+                    // Time labels
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            formatDuration(pos, forceHours: total.inHours > 0),
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          Text(
+                            formatDuration(total, forceHours: total.inHours > 0),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
                       ),
-                    IconButton(
-                      icon: const Icon(Icons.forward_30),
-                      iconSize: 44,
-                      onPressed: isLoading
+                    ),
+                    // Slider
+                    Slider(
+                      value: (total == Duration.zero ? 0.0 : pos.inMilliseconds.toDouble())
+                          .clamp(0.0, total.inMilliseconds.toDouble().clamp(1, double.infinity)),
+                      min: 0.0,
+                      max: total == Duration.zero ? 1.0 : total.inMilliseconds.toDouble(),
+                      onChanged: isLoading || total == Duration.zero
                           ? null
-                          : () =>
-                              onSeekRelative(const Duration(seconds: 30)),
-                      tooltip: 'Forward 30s',
+                          : (v) => audioHandler.seek(Duration(milliseconds: v.round())),
+                      onChangeEnd: (_) => onSeekEnd?.call(),
+                    ),
+                    // Buttons
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.replay_30),
+                          iconSize: 44,
+                          onPressed: isLoading ? null : () => onSeekRelative(const Duration(seconds: -30)),
+                          tooltip: 'Rewind 30s',
+                        ),
+                        if (buffering || isLoading)
+                          const SizedBox(
+                            width: 64,
+                            height: 64,
+                            child: Center(child: CircularProgressIndicator()),
+                          )
+                        else
+                          IconButton(
+                            icon: Icon(playing ? Icons.pause_circle_filled : Icons.play_circle_filled),
+                            iconSize: 64,
+                            color: kPrimaryColor,
+                            onPressed: onPlayPause,
+                            tooltip: playing ? 'Pause' : 'Play',
+                          ),
+                        IconButton(
+                          icon: const Icon(Icons.forward_30),
+                          iconSize: 44,
+                          onPressed: isLoading ? null : () => onSeekRelative(const Duration(seconds: 30)),
+                          tooltip: 'Forward 30s',
+                        ),
+                      ],
                     ),
                   ],
-                ),
-              ],
+                );
+              },
             );
           },
         );

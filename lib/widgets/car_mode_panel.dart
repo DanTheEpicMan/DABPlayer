@@ -1,150 +1,185 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:record/record.dart';
+import 'package:path_provider/path_provider.dart';
+import '../services/local_whisper_service.dart';
 import '../theme.dart';
 
-/// Large-tap car mode UI for voice note recording.
-/// Designed to be used while driving — minimal, high-contrast, big targets.
+/// Large-tap car mode UI for flawless native audio recording and Local Whisper.
 class CarModePanel extends StatefulWidget {
-  final bool isRecording;
-  final String transcript;
-  final VoidCallback onTap;
+  final Future<void> Function(String) onSaveNote;
+  final VoidCallback onPauseRequested;
 
   const CarModePanel({
     super.key,
-    required this.isRecording,
-    required this.transcript,
-    required this.onTap,
+    required this.onSaveNote,
+    required this.onPauseRequested,
   });
 
   @override
   State<CarModePanel> createState() => _CarModePanelState();
 }
 
-class _CarModePanelState extends State<CarModePanel>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _pulse;
+class _CarModePanelState extends State<CarModePanel> {
+  late final AudioRecorder _audioRecorder;
+  bool _isRecording = false;
+  bool _isProcessing = false;
+  String? _recordPath;
 
   @override
   void initState() {
     super.initState();
-    _pulse = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    );
-  }
-
-  @override
-  void didUpdateWidget(CarModePanel oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.isRecording && !_pulse.isAnimating) {
-      _pulse.repeat(reverse: true);
-    } else if (!widget.isRecording && _pulse.isAnimating) {
-      _pulse.stop();
-      _pulse.reset();
-    }
+    _audioRecorder = AudioRecorder();
+    // Warm up whisper engine
+    LocalWhisperService.init();
   }
 
   @override
   void dispose() {
-    _pulse.dispose();
+    _audioRecorder.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleTap() async {
+    if (_isProcessing) return;
+
+    if (_isRecording) {
+      // Stop recording and pass to local whisper
+      setState(() {
+        _isRecording = false;
+        _isProcessing = true;
+      });
+
+      try {
+        final path = await _audioRecorder.stop();
+        if (path != null && path.isNotEmpty) {
+          final transcript = await LocalWhisperService.transcribe(path);
+          if (transcript != null && transcript.trim().isNotEmpty) {
+            await widget.onSaveNote(transcript.trim());
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$e'), duration: const Duration(seconds: 4)),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _isProcessing = false);
+        }
+      }
+    } else {
+      // Begin local audio recording
+      widget.onPauseRequested();
+      try {
+        if (await _audioRecorder.hasPermission()) {
+          final dir = await getExternalStorageDirectory() ?? await getApplicationDocumentsDirectory();
+          // Provide a clean permanent filename instead of temp
+          _recordPath = '${dir.path}/VMemo_${DateTime.now().millisecondsSinceEpoch}.wav';
+          
+          await _audioRecorder.start(
+            const RecordConfig(
+              encoder: AudioEncoder.wav, 
+              numChannels: 1, 
+              sampleRate: 16000
+            ),
+            path: _recordPath!,
+          );
+          
+          setState(() => _isRecording = true);
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Microphone permission denied.')),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not start microphone: $e')),
+          );
+        }
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    Color ringColor = kPrimaryColor;
+    if (_isRecording) ringColor = Colors.redAccent;
+    if (_isProcessing) ringColor = Colors.orange;
+
     return Expanded(
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedBuilder(
-          animation: _pulse,
-          builder: (context, child) {
-            final glow = widget.isRecording ? _pulse.value : 0.0;
-            return Container(
-              margin: const EdgeInsets.only(top: 12),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                gradient: widget.isRecording
-                    ? LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Color.lerp(const Color(0xFFBBDEFB),
-                              kPrimaryColor, glow)!,
-                          Color.lerp(const Color(0xFFE1F5FE),
-                              const Color(0xFF80D8FF), glow)!,
-                        ],
-                      )
-                    : const LinearGradient(
-                        colors: [Color(0xFFF5F5F5), Color(0xFFEEEEEE)],
-                      ),
-                boxShadow: widget.isRecording
-                    ? [
+      child: Container(
+        margin: const EdgeInsets.only(top: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          color: Colors.grey.shade100,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: _handleTap,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: ringColor,
+                      boxShadow: [
                         BoxShadow(
-                          color: kPrimaryColor.withOpacity(0.3 + glow * 0.3),
-                          blurRadius: 20 + glow * 20,
-                          spreadRadius: glow * 6,
+                          color: ringColor.withOpacity(0.3),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        )
+                      ],
+                    ),
+                    child: _isProcessing
+                        ? const Center(
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 3,
+                            ),
+                          )
+                        : Icon(
+                            _isRecording ? Icons.stop : Icons.mic,
+                            size: 60,
+                            color: Colors.white,
+                          ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    _isProcessing
+                        ? 'Transcribing Note Offline...'
+                        : _isRecording
+                            ? 'Recording... Tap to Stop'
+                            : 'Tap to Record Note',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          color: ringColor,
+                          fontWeight: FontWeight.w600,
                         ),
-                      ]
-                    : [],
-              ),
-              child: child,
-            );
-          },
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Mic icon with ring animation
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: widget.isRecording ? 110 : 90,
-                  height: widget.isRecording ? 110 : 90,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: widget.isRecording
-                        ? kPrimaryColor
-                        : Colors.grey.shade300,
                   ),
-                  child: Icon(
-                    widget.isRecording ? Icons.mic : Icons.mic_none,
-                    size: widget.isRecording ? 56 : 46,
-                    color: widget.isRecording ? Colors.white : Colors.grey.shade600,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  widget.isRecording
-                      ? 'Listening…\nTap to Stop & Save'
-                      : 'Tap to Record a Note',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: widget.isRecording
-                            ? kPrimaryColor
-                            : Colors.grey.shade600,
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-                if (widget.transcript.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.7),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                  if (_isProcessing) ...[
+                    const SizedBox(height: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24.0),
                       child: Text(
-                        '"${widget.transcript}"',
+                        'Running Whisper local inference...',
                         textAlign: TextAlign.center,
-                        style:
-                            Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                  fontStyle: FontStyle.italic,
-                                ),
+                        style: TextStyle(color: Colors.grey.shade600),
                       ),
                     ),
-                  ),
+                  ]
                 ],
-              ],
+              ),
             ),
           ),
         ),

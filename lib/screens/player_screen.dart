@@ -7,7 +7,7 @@ import '../main.dart';
 import '../audio/audio_handler.dart';
 import '../data/models/note.dart';
 import '../data/models/device_position.dart';
-import '../services/speech_service.dart';
+import '../data/models/device_position.dart';
 import '../utils/time_utils.dart';
 import '../widgets/playback_controls.dart';
 import '../widgets/chapter_controls.dart';
@@ -31,8 +31,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final _timeCtrl = TextEditingController();
 
   Timer? _saveTimer;
-  late SpeechService _speech;
-  bool _voiceSupported = false;
+
+  Timer? _sleepTimer;
+  int? _sleepStartChapter;
+  Duration? _sleepStartPosition;
+  DateTime? _sleepEndTime;
 
   // -------------------------------------------------------------------------
   // Lifecycle
@@ -41,16 +44,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
-    _speech = SpeechService();
-    _speech.onTranscriptChanged = () => setState(() {});
-    _speech.onSessionComplete = (transcript) async {
-      await _saveNote(transcript);
-      if (mounted && !_isCarMode) {
-        // Resume audio after voice note in regular mode
-        await audioHandler.play();
-      }
-    };
-
     _init();
 
     // Save position whenever playback pauses
@@ -61,10 +54,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
+    _sleepTimer?.cancel();
     _saveTimer?.cancel();
     _noteCtrl.dispose();
     _timeCtrl.dispose();
-    _speech.dispose();
     WakelockPlus.disable();
     super.dispose();
   }
@@ -77,16 +70,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (currentBook == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          Navigator.pushReplacementNamed(context, '/books');
+          Navigator.pushNamedAndRemoveUntil(context, '/books', (r) => false);
         }
       });
       return;
-    }
-
-    // Init speech on supported platforms
-    if (Platform.isAndroid || Platform.isIOS) {
-      await _speech.initialize();
-      if (mounted) setState(() => _voiceSupported = _speech.isSupported);
     }
 
     // Load the chapter
@@ -275,20 +262,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   // Voice / Car mode
   // -------------------------------------------------------------------------
 
-  Future<void> _toggleVoice() async {
-    if (_speech.isSessionActive) {
-      await _speech.stopSession();
-      setState(() {});
-    } else {
-      // Pause audio before recording
-      if (audioHandler.playbackState.value.playing) {
-        await audioHandler.pause();
-      }
-      await _speech.startSession();
-      setState(() {});
-    }
-  }
-
   void _toggleCarMode() {
     setState(() => _isCarMode = !_isCarMode);
     if (_isCarMode) {
@@ -296,6 +269,111 @@ class _PlayerScreenState extends State<PlayerScreen> {
     } else {
       WakelockPlus.disable();
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Sleep Timer
+  // -------------------------------------------------------------------------
+
+  void _clearSleepTimer() {
+    _sleepTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        _sleepTimer = null;
+        _sleepStartChapter = null;
+        _sleepStartPosition = null;
+        _sleepEndTime = null;
+      });
+    }
+  }
+
+  void _startSleepTimer(Duration duration) {
+    _clearSleepTimer();
+    setState(() {
+      _sleepStartChapter = currentChapterIndex;
+      _sleepStartPosition = audioHandler.playbackState.value.updatePosition;
+      _sleepEndTime = DateTime.now().add(duration);
+      _sleepTimer = Timer(duration, _executeSleepAction);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Sleep timer set for ${duration.inMinutes} minutes. Progress will be discarded when it ends.')));
+  }
+
+  Future<void> _executeSleepAction() async {
+    if (audioHandler.playbackState.value.playing) {
+      await audioHandler.pause();
+    }
+    if (_sleepStartChapter != null && _sleepStartPosition != null) {
+      if (currentChapterIndex != _sleepStartChapter) {
+        await _loadChapter(_sleepStartChapter!,
+            seekTo: _sleepStartPosition, autoPlay: false);
+      } else {
+        await audioHandler.seek(_sleepStartPosition!);
+      }
+      await _savePosition();
+    }
+    _clearSleepTimer();
+  }
+
+  void _showSleepTimerDialog() {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ListTile(
+                title: Text('Sleep Timer (Play & Discard)',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text('Rewinds to current position when timer ends.'),
+              ),
+              if (_sleepTimer != null) ...[
+                ListTile(
+                  leading: const Icon(Icons.timer_off_outlined, color: Colors.blue),
+                  title: const Text('Turn Off Timer', style: TextStyle(color: Colors.blue)),
+                  onTap: () {
+                    _clearSleepTimer();
+                    Navigator.pop(ctx);
+                  },
+                ),
+                const Divider(),
+              ],
+              _buildTimerOption(ctx, 15),
+              _buildTimerOption(ctx, 30),
+              _buildTimerOption(ctx, 45),
+              _buildTimerOption(ctx, 60),
+              ListTile(
+                leading: const Icon(Icons.skip_next_outlined),
+                title: const Text('End of Chapter'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  final duration = audioHandler.mediaItem.value?.duration;
+                  final position = audioHandler.playbackState.value.updatePosition;
+                  if (duration != null) {
+                    final remaining = duration - position;
+                    if (remaining > Duration.zero) {
+                      _startSleepTimer(remaining);
+                    }
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTimerOption(BuildContext ctx, int minutes) {
+    return ListTile(
+      leading: const Icon(Icons.snooze),
+      title: Text('$minutes minutes'),
+      onTap: () {
+        Navigator.pop(ctx);
+        _startSleepTimer(Duration(minutes: minutes));
+      },
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -425,13 +503,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
       appBar: AppBar(
         title: Text(book.title, overflow: TextOverflow.ellipsis),
         actions: [
-          // Car mode toggle (requires voice support)
-          if (_voiceSupported)
-            IconButton(
-              icon: Icon(_isCarMode ? Icons.notes : Icons.directions_car),
-              tooltip: _isCarMode ? 'Exit Car Mode' : 'Car Mode',
-              onPressed: _toggleCarMode,
+          // Car mode toggle
+          IconButton(
+            icon: Icon(_isCarMode ? Icons.notes : Icons.directions_car),
+            tooltip: _isCarMode ? 'Exit Car Mode' : 'Car Mode',
+            onPressed: _toggleCarMode,
+          ),
+          // Sleep Timer
+          IconButton(
+            icon: Icon(
+              _sleepTimer != null ? Icons.timer : Icons.snooze_outlined,
+              color: _sleepTimer != null ? Colors.blueAccent : null,
             ),
+            tooltip: 'Sleep Timer',
+            onPressed: _showSleepTimerDialog,
+          ),
           // Seek
           IconButton(
             icon: const Icon(Icons.timer_outlined),
@@ -445,7 +531,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             onPressed: () async {
               await _pauseAndSave();
               if (mounted) {
-                Navigator.pushReplacementNamed(context, '/devices');
+                Navigator.pushNamed(context, '/devices');
               }
             },
           ),
@@ -456,7 +542,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             onPressed: () async {
               await _pauseAndSave();
               if (mounted) {
-                Navigator.pushReplacementNamed(context, '/books');
+                Navigator.pushNamedAndRemoveUntil(context, '/books', (r) => false);
               }
             },
           ),
@@ -467,7 +553,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             onPressed: () async {
               await _pauseAndSave();
               if (mounted) {
-                Navigator.pushReplacementNamed(context, '/settings');
+                Navigator.pushNamed(context, '/settings');
               }
             },
           ),
@@ -499,19 +585,25 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   // Either notes or car mode panel
                   if (_isCarMode)
                     CarModePanel(
-                      isRecording: _speech.isSessionActive,
-                      transcript: _speech.fullTranscript,
-                      onTap: _toggleVoice,
+                      onSaveNote: (text) async {
+                        await _saveNote(text);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Note Saved')));
+                        }
+                      },
+                      onPauseRequested: () {
+                        if (audioHandler.playbackState.value.playing) {
+                          audioHandler.pause();
+                        }
+                      },
                     )
                   else
                     Expanded(
                       child: NotesPanel(
                         notes: _notes,
                         isLoading: _isLoading,
-                        voiceSupported: _voiceSupported,
                         noteController: _noteCtrl,
                         onAdd: _addTextNote,
-                        onVoiceTap: _toggleVoice,
                         onDelete: _deleteNote,
                         onEdit: _editNote,
                       ),

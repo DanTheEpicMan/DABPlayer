@@ -8,10 +8,8 @@ import '../theme.dart';
 class NotesPanel extends StatelessWidget {
   final List<Note> notes;
   final bool isLoading;
-  final bool voiceSupported;
   final TextEditingController noteController;
   final VoidCallback onAdd;
-  final VoidCallback onVoiceTap;
   final void Function(Note) onDelete;
   final void Function(Note) onEdit;
 
@@ -19,10 +17,8 @@ class NotesPanel extends StatelessWidget {
     super.key,
     required this.notes,
     required this.isLoading,
-    required this.voiceSupported,
     required this.noteController,
     required this.onAdd,
-    required this.onVoiceTap,
     required this.onDelete,
     required this.onEdit,
   });
@@ -72,19 +68,6 @@ class NotesPanel extends StatelessWidget {
                       .titleMedium
                       ?.copyWith(fontWeight: FontWeight.bold)),
               const Spacer(),
-              if (voiceSupported)
-                Tooltip(
-                  message: 'Record voice note',
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(20),
-                    onTap: onVoiceTap,
-                    child: Padding(
-                      padding: const EdgeInsets.all(4),
-                      child: Icon(Icons.mic_none,
-                          color: kPrimaryColor, size: 26),
-                    ),
-                  ),
-                ),
             ],
           ),
         ),
